@@ -1,0 +1,21 @@
+{
+  "upstream": "BerriAI/litellm",
+  "tag": "v1.111.0",
+  "upstream_sha": "e3370c9d6152cc4407a55e06c101e3c7dd4168ab",
+  "overlay_sha": "5074ce6eb568f793347c432f2a70ad4274e26f0e",
+  "dockerfile_path": "litellm/deploy/docker/Dockerfile",
+  "dockerfile_sha256": "f13c0e0cd14521f16956ebf83d8893a8a4237d3e8c1b9328c329cb6a72fe22f0",
+  "reused_workflow": ".github/workflows/test-merge-smoke.yml",
+  "reused_workflow_sha256": "2c0fd429e8433a9e100da617debed56d9a9c240a0d0dd1d4f6f6764c567989bf",
+  "reused_ui_command": "docker build --target ui-builder -f litellm/deploy/docker/Dockerfile .",
+  "build_recipe": "litellm/deploy/docker/Dockerfile",
+  "ui_project_path": "litellm/ui/litellm-dashboard",
+  "ui_source_path": "litellm/ui/litellm-dashboard/src",
+  "dictionary_sha256": "3f1be2876a15b02f4a19ad6c8304e11cc8de5c376b3055574252cbf2297caac7",
+  "image": "ghcr.io/muxuezzz/litellm:v1.111.0-zh",
+  "language": "zh-CN",
+  "replacements": 10708,
+  "static_replacements": 4,
+  "native_replacements": 10704,
+  "changed_files": 6
+}
