@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -170,54 +169,12 @@ export function prepare(root, tag) {
   return provenance;
 }
 
-// 发布分支只承载汉化层与溯源信息；完整源码仍打包为 Release 附件和构建输入。
-// 这样上游测试夹具中的占位密钥不会进入 Git 历史，避免 Push Protection 反复阻断。
-export function snapshot(root, tag, artifactDir) {
-  if (!/^v\d+\.\d+\.\d+$/.test(tag) || !version(tag)) throw new Error("拒绝不支持的版本");
-  const markerPath = path.join(root, ".litellm-zh.json");
-  if (!fs.existsSync(markerPath)) throw new Error("请先执行汉化准备");
-  const report = JSON.parse(fs.readFileSync(markerPath, "utf8"));
-  if (!safeRelative(report.ui_source_path) || !fs.existsSync(path.join(root, report.ui_source_path))) throw new Error("汉化源码路径无效");
-  if (!fs.existsSync(path.join(root, ".zh/provenance.json"))) throw new Error("缺少构建溯源");
-  const actor = process.env.GITHUB_ACTOR ?? process.env.GITHUB_REPOSITORY_OWNER ?? "litellm-zh";
-  if (!/^[A-Za-z0-9_.-]+$/.test(actor)) throw new Error("提交署名非法");
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "litellm-zh-index-"));
-  const indexFor = (name) => {
-    const file = path.join(temp, name);
-    const run = (...args) => execFileSync("git", ["-C", root, ...args], {
-      encoding: "utf8", timeout: 180_000, env: { ...process.env, GIT_INDEX_FILE: file },
-    }).trim();
-    return run;
-  };
-  try {
-    const full = indexFor("full");
-    full("read-tree", "--empty");
-    full("add", "-A");
-    const fullTree = full("write-tree");
-    fs.mkdirSync(artifactDir, { recursive: true });
-    execFileSync("git", ["-C", root, "archive", "--format=tar.gz", `--output=${path.join(artifactDir, "translated-source.tar.gz")}`, fullTree], { timeout: 180_000 });
-
-    const overlay = indexFor("overlay");
-    overlay("read-tree", "--empty");
-    overlay("add", "--", report.ui_source_path, ".litellm-zh.json", ".zh");
-    const tree = overlay("write-tree");
-    const commit = overlay("-c", `user.name=${actor}`, "-c", `user.email=${actor}@users.noreply.github.com`,
-      "commit-tree", tree, "-m", `feat: 同步并汉化 LiteLLM ${tag}`);
-    git(root, "update-ref", "refs/heads/zh-source", commit);
-    execFileSync("git", ["-C", root, "bundle", "create", path.join(artifactDir, "source.bundle"), "refs/heads/zh-source"], { timeout: 180_000 });
-    return { commit, full_tree: fullTree, tree, overlay_paths: [report.ui_source_path, ".litellm-zh.json", ".zh"] };
-  } finally {
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
-}
-
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const command = process.argv[2];
     const result = command === "discover" ? await discover(process.env.REQUESTED_TAG ?? "") :
       command === "prepare" ? prepare(path.resolve(process.argv[3] ?? "source"), process.env.UPSTREAM_TAG ?? "") :
-      command === "snapshot" ? snapshot(path.resolve(process.argv[3] ?? "source"), process.env.UPSTREAM_TAG ?? "", path.resolve(process.argv[4] ?? "artifacts")) :
-      (() => { throw new Error("命令必须为 discover、prepare 或 snapshot"); })();
+      (() => { throw new Error("命令必须为 discover 或 prepare"); })();
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {
     console.error(`发布准备失败：${error.message}`);
