@@ -37,7 +37,7 @@ ghcr.io/OWNER/litellm:v1.108.4-zh
 - 先把 Tag 解析为精确提交 SHA，再 checkout。汉化后检查源码语法和前端类型，再构建两个架构的镜像。
 - 两个架构均通过无网络的镜像内版本、中文 HTML 和中文 bundle 检查后，才发布统一镜像标签和正式 Release。
 - Release 附件保留原始上游源码、中文源码、翻译报告、构建溯源、镜像索引和 SHA256 校验清单。
-- 发布源码位于 `releases/vX.Y.Z-zh` 分支，Release Tag 为 `vX.Y.Z-zh`。主分支只维护本仓库的转换程序、词库和发布编排，不和上游进行日常 merge。
+- 发布源码位于 `releases/vX.Y.Z-zh` 分支，Release Tag 为 `vX.Y.Z-zh`。该分支只承载汉化后的 UI 源码、`.litellm-zh.json` 和 `.zh/` 溯源材料；完整上游源码与汉化后源码分别作为 Release 附件 `upstream-source.tar.gz`、`translated-source.tar.gz` 提供。这样上游测试夹具中的占位密钥不会进入 Git 历史并触发 Push Protection。主分支只维护本仓库的转换程序、词库和发布编排，不和上游进行日常 merge。
 - 上游 workflows 原文保留在发行源码的 `.zh/upstream-workflows/`，不在本仓库触发其 Issue 管理、内部部署或全量测试任务。上游原始附件保留原路径。发布只使用本仓库明确审查的编排。
 
 GitHub 定时任务不保证准点，且无活动的公开仓库可能被 GitHub 停用定时工作流；停用后需要手动重新启用。
