@@ -29,6 +29,7 @@ jobs:
       translated_tag: ${{ steps.plan.outputs.translated_tag }}
       upstream_sha: ${{ steps.plan.outputs.upstream_sha }}
       image: ${{ steps.plan.outputs.image }}
+      image_repository: ${{ steps.plan.outputs.image_repository }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
@@ -89,10 +90,10 @@ jobs:
         run: npm run typecheck
       - name: 生成可审计源码快照
         env:
-          GIT_AUTHOR_NAME: le-shi
-          GIT_AUTHOR_EMAIL: 13051960278@163.com
-          GIT_COMMITTER_NAME: le-shi
-          GIT_COMMITTER_EMAIL: 13051960278@163.com
+          GIT_AUTHOR_NAME: ${{ github.actor }}
+          GIT_AUTHOR_EMAIL: ${{ github.actor }}@users.noreply.github.com
+          GIT_COMMITTER_NAME: ${{ github.actor }}
+          GIT_COMMITTER_EMAIL: ${{ github.actor }}@users.noreply.github.com
           UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
         run: |
           set -euo pipefail
@@ -155,10 +156,10 @@ jobs:
           context: source
           file: source/${{ steps.recipe.outputs.dockerfile }}
           platforms: linux/${{ matrix.arch }}
-          outputs: type=image,name=ghcr.io/le-shi/litellm,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ needs.discover.outputs.image_repository }},push-by-digest=true,name-canonical=true,push=true
           build-args: LITELLM_RELEASE_TAG=${{ needs.discover.outputs.tag }}
           labels: |
-            org.opencontainers.image.source=https://github.com/le-shi/litellm-zh
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.discover.outputs.translated_tag }}
             org.opencontainers.image.revision=${{ needs.discover.outputs.upstream_sha }}
             io.litellm.zh.overlay.revision=${{ github.sha }}
@@ -174,7 +175,7 @@ jobs:
           set -euo pipefail
           docker run --rm --network none --entrypoint /app/.venv/bin/python3 \
             -e LITELLM_LOCAL_MODEL_COST_MAP=True -e EXPECTED_VERSION \
-            "ghcr.io/le-shi/litellm@${DIGEST}" -c '
+            "${{ needs.discover.outputs.image_repository }}@${DIGEST}" -c '
           import importlib.metadata, os, pathlib, litellm
           actual = importlib.metadata.version("litellm")
           assert actual == os.environ["EXPECTED_VERSION"].removeprefix("v"), actual

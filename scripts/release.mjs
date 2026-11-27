@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { applyOverlay, locateUiSource } from "./apply.mjs";
+import { currentRepository, imageRepository } from "./context.mjs";
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const config = JSON.parse(fs.readFileSync(path.join(project, "config.json"), "utf8"));
@@ -68,7 +69,7 @@ async function resolveTag(tag) {
 }
 
 export async function discover(tag = "") {
-  const repository = process.env.GITHUB_REPOSITORY ?? "le-shi/litellm-zh";
+  const repository = currentRepository();
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error("非法目标仓库");
   let release;
   if (tag) {
@@ -94,7 +95,8 @@ export async function discover(tag = "") {
     translated_tag: translatedTag,
     upstream_sha: upstreamSha,
     release_url: release.html_url,
-    image: `${config.image}:${translatedTag}`,
+    image_repository: imageRepository(),
+    image: `${imageRepository()}:${translatedTag}`,
     publish: existing === null || existing.draft === true,
   };
   if (process.env.GITHUB_OUTPUT) {
@@ -148,7 +150,7 @@ export function prepare(root, tag) {
     ui_project_path: recipe.uiProject,
     ui_source_path: recipe.uiSource,
     dictionary_sha256: sha256(dictionaryBytes),
-    image: `${config.image}:${tag}-zh`, language: config.language,
+    image: `${imageRepository()}:${tag}-zh`, language: config.language,
     replacements: report.replacements, static_replacements: report.staticReplacements,
     native_replacements: report.nativeReplacements, changed_files: report.files.length,
   };

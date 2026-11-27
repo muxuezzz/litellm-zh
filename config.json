@@ -1,7 +1,7 @@
 {
   "upstream": "BerriAI/litellm",
   "minimum_version": "1.108.0",
-  "image": "ghcr.io/le-shi/litellm",
+  "image": "ghcr.io/{owner}/litellm",
   "language": "zh-CN",
   "minimum_replacements": 100,
   "platforms": ["linux/amd64", "linux/arm64"],

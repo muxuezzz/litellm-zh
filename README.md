@@ -1,7 +1,9 @@
 # LiteLLM 中文发行层
 
-[![汉化层检查](https://github.com/le-shi/litellm-zh/actions/workflows/test.yml/badge.svg)](https://github.com/le-shi/litellm-zh/actions/workflows/test.yml)
-[![中文镜像发布](https://github.com/le-shi/litellm-zh/actions/workflows/release.yml/badge.svg)](https://github.com/le-shi/litellm-zh/actions/workflows/release.yml)
+[![汉化层检查](https://github.com/OWNER/litellm-zh/actions/workflows/test.yml/badge.svg)](https://github.com/OWNER/litellm-zh/actions/workflows/test.yml)
+[![中文镜像发布](https://github.com/OWNER/litellm-zh/actions/workflows/release.yml/badge.svg)](https://github.com/OWNER/litellm-zh/actions/workflows/release.yml)
+
+下文示例中的 `OWNER` 指当前仓库所有者（用户或组织），发布流程会自动按仓库归属填充，无需手改代码。
 
 在上游 [BerriAI/litellm](https://github.com/BerriAI/litellm) 的正式发行版上应用独立中文转换层，再使用该版本的原始 Dockerfile 构建镜像。固定显示中文，不新增语言切换、前端国际化框架、后端接口或数据库迁移。
 
@@ -10,7 +12,7 @@
 ```yaml
 services:
   litellm:
-    image: ghcr.io/le-shi/litellm:v1.109.0-zh
+    image: ghcr.io/OWNER/litellm:v1.109.0-zh
 ```
 
 以上只展示镜像替换位置，不是完整部署配置。保留自己的配置、环境变量、数据库、卷、端口和重启策略。支持 `linux/amd64` 与 `linux/arm64`。生产环境建议进一步固定镜像摘要，正式发布的版本标签不自动覆盖。
@@ -20,10 +22,12 @@ services:
 ```text
 ghcr.io/berriai/litellm:v1.108.4
                  ↓
-ghcr.io/le-shi/litellm:v1.108.4-zh
+ghcr.io/OWNER/litellm:v1.108.4-zh
 ```
 
-镜像是否已产出以 [Releases](https://github.com/le-shi/litellm-zh/releases) 和发布流程结果为准，不把仓库创建、脚本测试成功当作镜像可用。
+镜像仓库名由 `config.json` 的 `ghcr.io/{owner}/litellm` 模板生成，`{owner}` 取自 GitHub 的 `GITHUB_REPOSITORY`（本地执行时取自 `origin` 远程），因此镜像和 Release 始终归当前仓库所有者。
+
+镜像是否已产出以 [Releases](https://github.com/OWNER/litellm-zh/releases) 和发布流程结果为准，不把仓库创建、脚本测试成功当作镜像可用。
 
 ## 自动同步与发布
 
@@ -63,14 +67,14 @@ npm ci --ignore-scripts
 npm test
 node scripts/apply.mjs /path/to/clean/litellm
 docker build -f /path/to/clean/litellm/litellm/deploy/docker/Dockerfile \
-  -t ghcr.io/le-shi/litellm:v1.111.0-zh /path/to/clean/litellm
+  -t ghcr.io/OWNER/litellm:v1.111.0-zh /path/to/clean/litellm
 ```
 
 上面的 Dockerfile 路径对应 v1.111.0 起的新布局；v1.110.x 及更早版本使用 `/path/to/clean/litellm/Dockerfile`。汉化后的实际路径也记录在源码根目录的 `.litellm-zh.json` 中。`apply.mjs` 只应用中文层，不发布、不修改 Git 分支。相同转换结果可以重复检查；词库或已经转换的文件发生变化时，必须使用干净上游源码重新生成，不能叠加不同汉化层。
 
 ## 发布权限与恢复
 
-工作流只使用当前仓库的 `GITHUB_TOKEN`：发现和准备阶段只读，构建阶段仅增加 `packages: write`，正式发布阶段增加 `contents: write`。无需配置长期 PAT，不会推送到 BerriAI 或原来的 `le-shi/litellm`。第三方 Actions 固定到提交 SHA，转换器依赖 TypeScript 5.9.3 并提交锁文件。
+工作流只使用当前仓库的 `GITHUB_TOKEN`：发现和准备阶段只读，构建阶段仅增加 `packages: write`，正式发布阶段增加 `contents: write`。无需配置长期 PAT，不会推送到上游 BerriAI；镜像、Release、源码分支和提交署名都归属当前仓库及其触发者。第三方 Actions 固定到提交 SHA，转换器依赖 TypeScript 5.9.3 并提交锁文件。
 
 GHCR 新包可能默认为私有。首次发布后需确认包的可见性；如未继承公开设置，在包设置中改为 Public，才能匿名拉取。
 

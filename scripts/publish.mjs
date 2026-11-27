@@ -2,14 +2,15 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { currentRepository, imageRepository } from "./context.mjs";
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const config = JSON.parse(fs.readFileSync(path.join(project, "config.json"), "utf8"));
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", timeout: 180_000, ...options }).trim();
 
-export function validatePublication(provenance, tag, sha) {
+export function validatePublication(provenance, tag, sha, expectedImage = imageRepository()) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag) || !/^[a-f0-9]{40}$/.test(sha)) throw new Error("非法发布标识");
-  if (provenance.tag !== tag || provenance.upstream_sha !== sha || provenance.image !== `${config.image}:${tag}-zh`) {
+  if (provenance.tag !== tag || provenance.upstream_sha !== sha || provenance.image !== `${expectedImage}:${tag}-zh`) {
     throw new Error("构建溯源与待发布版本不一致");
   }
 }
@@ -24,11 +25,11 @@ export function sourceCommitForRelease(built, existing, oldTree, newTree) {
 }
 
 export function publish() {
-  const repository = process.env.GITHUB_REPOSITORY;
-  if (repository !== "le-shi/litellm-zh") throw new Error("发布目标必须是 le-shi/litellm-zh");
+  const repository = currentRepository();
+  const imageBase = imageRepository();
   const tag = process.env.UPSTREAM_TAG;
   const provenance = JSON.parse(fs.readFileSync("artifacts/provenance.json", "utf8"));
-  validatePublication(provenance, tag, process.env.UPSTREAM_SHA);
+  validatePublication(provenance, tag, process.env.UPSTREAM_SHA, imageBase);
   const translatedTag = `${tag}-zh`;
   const image = provenance.image;
   const digests = ["amd64", "arm64"].map((arch) => {
@@ -62,12 +63,12 @@ export function publish() {
   }
   if (publishedIndex) {
     const expected = digests.flatMap((digest) => {
-      const manifest = JSON.parse(run("docker", ["buildx", "imagetools", "inspect", "--raw", `${config.image}@${digest}`]));
+      const manifest = JSON.parse(run("docker", ["buildx", "imagetools", "inspect", "--raw", `${imageBase}@${digest}`]));
       return manifest.manifests?.length ? indexDigests(manifest) : [digest];
     }).sort();
     if (JSON.stringify(indexDigests(publishedIndex)) !== JSON.stringify(expected)) throw new Error("固定版本镜像已存在且摘要不同，禁止覆盖");
   } else {
-    run("docker", ["buildx", "imagetools", "create", "--tag", image, ...digests.map((digest) => `${config.image}@${digest}`)]);
+    run("docker", ["buildx", "imagetools", "create", "--tag", image, ...digests.map((digest) => `${imageBase}@${digest}`)]);
   }
   const finalManifest = JSON.parse(run("docker", ["buildx", "imagetools", "inspect", "--raw", image]));
   const platforms = finalManifest.manifests?.map((item) => `${item.platform?.os}/${item.platform?.architecture}`) ?? [];
