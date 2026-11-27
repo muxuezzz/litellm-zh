@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { applyOverlay } from "./apply.mjs";
+import { applyOverlay, locateUiSource } from "./apply.mjs";
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const config = JSON.parse(fs.readFileSync(path.join(project, "config.json"), "utf8"));
@@ -103,29 +103,51 @@ export async function discover(tag = "") {
   return result;
 }
 
+const workflowPath = ".github/workflows/test-merge-smoke.yml";
+const safeRelative = (value) => /^[A-Za-z0-9_./-]+$/.test(value) && !value.startsWith("/") && !value.includes("..");
+
+// 路径从上游自己的公开构建命令和 Dockerfile 推导，不把 v1.111.0 的布局写死；
+// 任一环节再次漂移都会明确失败，而不是发布用错配方的镜像。
+export function locateRecipe(root) {
+  const workflowBytes = fs.readFileSync(path.join(root, workflowPath));
+  const dockerfilePath = [...workflowBytes.toString().matchAll(/docker build --target ui-builder -f\s+(\S+)\s+\./g)]
+    .map((match) => match[1])
+    .find((relative) => safeRelative(relative) && fs.existsSync(path.join(root, relative)));
+  if (!dockerfilePath) throw new Error("上游公开构建流程或 Dockerfile 路径已变化，停止复用并人工复核");
+  const dockerfile = fs.readFileSync(path.join(root, dockerfilePath));
+  const uiProject = [...dockerfile.toString().matchAll(/^COPY\s+(\S+)\/package\.json\s+(\S+)\/package-lock\.json\s+\.\/?\s*$/gm)]
+    .map((match) => (match[1] === match[2] && safeRelative(match[1]) ? match[1] : ""))
+    .find(Boolean);
+  if (!uiProject) throw new Error("上游 Dockerfile 的 UI 构建入口已变化，停止发布并人工适配");
+  const ui = locateUiSource(root, uiProject);
+  const reusedUiCommand = `docker build --target ui-builder -f ${dockerfilePath} .`;
+  return { dockerfilePath, workflowPath, workflow: workflowBytes, dockerfile, reusedUiCommand, uiSource: ui.source, uiProject: ui.project };
+}
+
 export function prepare(root, tag) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag) || !version(tag) || compareVersions(tag, config.minimum_version) < 0) throw new Error("拒绝不支持的版本");
   if (git(root, "status", "--porcelain")) throw new Error("只允许转换干净的上游 checkout");
   const upstreamSha = git(root, "rev-parse", "HEAD");
   if (process.env.UPSTREAM_SHA && upstreamSha !== process.env.UPSTREAM_SHA) throw new Error("上游源码 SHA 与发现阶段不一致");
-  const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"));
+  const recipe = locateRecipe(root);
+  const dockerfile = recipe.dockerfile;
   if (!/AS ui-builder/i.test(dockerfile.toString()) || !dockerfile.includes(Buffer.from("RUN npm run build"))) {
     throw new Error("上游 Dockerfile 不再包含既定 UI 构建阶段，需要人工适配");
   }
-  const workflow = fs.readFileSync(path.join(root, ".github/workflows/test-merge-smoke.yml"));
-  if (!workflow.toString().includes("docker build --target ui-builder -f Dockerfile .")) {
-    throw new Error("上游公开构建流程已变化，停止复用并人工复核");
-  }
   const dictionaryBytes = fs.readFileSync(path.join(project, "translations/zh-CN.json"));
-  const report = applyOverlay(root, JSON.parse(dictionaryBytes), config.minimum_replacements);
+  const report = applyOverlay(root, JSON.parse(dictionaryBytes), config.minimum_replacements, recipe.uiProject);
   const provenance = {
     upstream: config.upstream, tag, upstream_sha: upstreamSha,
     overlay_sha: process.env.GITHUB_SHA ?? git(project, "rev-parse", "HEAD"),
+    dockerfile_path: recipe.dockerfilePath,
     dockerfile_sha256: sha256(dockerfile),
-    reused_workflow: ".github/workflows/test-merge-smoke.yml",
-    reused_workflow_sha256: sha256(workflow),
-    reused_ui_command: "docker build --target ui-builder -f Dockerfile .",
-    build_recipe: "Dockerfile", dictionary_sha256: sha256(dictionaryBytes),
+    reused_workflow: recipe.workflowPath,
+    reused_workflow_sha256: sha256(recipe.workflow),
+    reused_ui_command: recipe.reusedUiCommand,
+    build_recipe: recipe.dockerfilePath,
+    ui_project_path: recipe.uiProject,
+    ui_source_path: recipe.uiSource,
+    dictionary_sha256: sha256(dictionaryBytes),
     image: `${config.image}:${tag}-zh`, language: config.language,
     replacements: report.replacements, static_replacements: report.staticReplacements,
     native_replacements: report.nativeReplacements, changed_files: report.files.length,
@@ -134,7 +156,14 @@ export function prepare(root, tag) {
   fs.writeFileSync(path.join(root, ".zh/provenance.json"), JSON.stringify(provenance, null, 2) + "\n");
   // 保留上游自动化作为审计材料，但不在发布分支执行其全部 CI 和管理任务。
   fs.renameSync(path.join(root, ".github/workflows"), path.join(root, ".zh/upstream-workflows"));
-  if (sha256(fs.readFileSync(path.join(root, "Dockerfile"))) !== provenance.dockerfile_sha256) throw new Error("禁止改写上游 Dockerfile");
+  if (sha256(fs.readFileSync(path.join(root, recipe.dockerfilePath))) !== provenance.dockerfile_sha256) throw new Error("禁止改写上游 Dockerfile");
+  if (process.env.GITHUB_OUTPUT) {
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, [
+      `dockerfile=${recipe.dockerfilePath}`,
+      `ui_project=${recipe.uiProject}`,
+      `ui_source=${recipe.uiSource}`,
+    ].join("\n") + "\n");
+  }
   return provenance;
 }
 

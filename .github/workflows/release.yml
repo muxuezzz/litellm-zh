@@ -70,6 +70,7 @@ jobs:
           path: source
           persist-credentials: false
       - name: 保存原始源码并应用独立汉化层
+        id: prepare
         env:
           UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
           UPSTREAM_SHA: ${{ needs.discover.outputs.upstream_sha }}
@@ -81,10 +82,10 @@ jobs:
           cp source/.litellm-zh.json artifacts/translation-report.json
           cp source/.zh/provenance.json artifacts/provenance.json
       - name: 安装上游锁定的前端依赖
-        working-directory: source/ui/litellm-dashboard
+        working-directory: source/${{ steps.prepare.outputs.ui_project }}
         run: npm ci --no-audit --no-fund
       - name: 前端类型检查
-        working-directory: source/ui/litellm-dashboard
+        working-directory: source/${{ steps.prepare.outputs.ui_project }}
         run: npm run typecheck
       - name: 生成可审计源码快照
         env:
@@ -95,7 +96,7 @@ jobs:
           UPSTREAM_TAG: ${{ needs.discover.outputs.tag }}
         run: |
           set -euo pipefail
-          git -C source add -- ui/litellm-dashboard/src .litellm-zh.json .zh .github/workflows
+          git -C source add -- "${{ steps.prepare.outputs.ui_source }}" .litellm-zh.json .zh .github/workflows
           tree=$(git -C source write-tree)
           commit=$(git -C source commit-tree "$tree" -m "feat: 同步并汉化 LiteLLM ${UPSTREAM_TAG}")
           git -C source update-ref refs/heads/zh-source "$commit"
@@ -134,6 +135,13 @@ jobs:
           set -euo pipefail
           mkdir source
           tar -xzf artifacts/translated-source.tar.gz -C source
+      - name: 读取构建配方
+        id: recipe
+        run: |
+          set -euo pipefail
+          dockerfile=$(jq -r '.dockerfile_path // empty' artifacts/provenance.json)
+          test -n "$dockerfile" && test -f "source/$dockerfile"
+          echo "dockerfile=$dockerfile" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -145,7 +153,7 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: source
-          file: source/Dockerfile
+          file: source/${{ steps.recipe.outputs.dockerfile }}
           platforms: linux/${{ matrix.arch }}
           outputs: type=image,name=ghcr.io/le-shi/litellm,push-by-digest=true,name-canonical=true,push=true
           build-args: LITELLM_RELEASE_TAG=${{ needs.discover.outputs.tag }}
@@ -170,9 +178,10 @@ jobs:
           import importlib.metadata, os, pathlib, litellm
           actual = importlib.metadata.version("litellm")
           assert actual == os.environ["EXPECTED_VERSION"].removeprefix("v"), actual
-          ui = pathlib.Path(litellm.__file__).parent / "proxy/_experimental/out"
-          assert any("lang=\"zh-CN\"" in p.read_text() for p in ui.glob("*.html")), "missing Chinese HTML"
-          assert any("模型" in p.read_text() for p in ui.rglob("*.js")), "missing Chinese bundle"
+          roots = [pathlib.Path(litellm.__file__).parent / "proxy/_experimental/out", pathlib.Path("/var/lib/litellm/ui")]
+          ui_roots = [root for root in roots if root.is_dir()]
+          assert any(any("lang=\"zh-CN\"" in p.read_text() for p in root.glob("*.html")) for root in ui_roots), "missing Chinese HTML"
+          assert any(any("模型" in p.read_text() for p in root.rglob("*.js")) for root in ui_roots), "missing Chinese bundle"
           print("镜像版本、HTML 语言和中文包检查通过")'
           mkdir -p digests
           printf '%s\n' "$DIGEST" > "digests/${{ matrix.arch }}.txt"

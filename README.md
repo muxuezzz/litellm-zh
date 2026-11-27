@@ -40,9 +40,9 @@ GitHub 定时任务不保证准点，且无活动的公开仓库可能被 GitHub
 
 ## “复用上游构建”的准确边界
 
-上游 `.github/workflows/test-merge-smoke.yml` 的 `dashboard-build` job 使用 `docker build --target ui-builder -f Dockerfile .`，但没有 `workflow_call`；公开仓库也未提供可供外部调用的完整镜像发布 reusable workflow。因此不能用 `uses: BerriAI/litellm/...` 直接调用这个 job。
+上游 `.github/workflows/test-merge-smoke.yml` 的 `dashboard-build` job 使用 `docker build --target ui-builder -f <Dockerfile 路径> .`，但没有 `workflow_call`；公开仓库也未提供可供外部调用的完整镜像发布 reusable workflow。因此不能用 `uses: BerriAI/litellm/...` 直接调用这个 job。
 
-本项目复用每个正式版本的原始根目录 Dockerfile、其中的 `ui-builder` 阶段、锁文件、Node/UI/Python/Rust/Prisma 构建链和启动入口。本仓库 Actions 仅提供同步、汉化、调用原始构建、检查和 GHCR 推送编排，不复制或维护第二份 Dockerfile。原始 Dockerfile 和公开构建 workflow 的 SHA256 会记入 `provenance.json`；入口结构变化时停止发布，待人工适配，不静默套用旧配方。
+本项目复用每个正式版本的原始 Dockerfile、其中的 `ui-builder` 阶段、锁文件、Node/UI/Python/Rust/Prisma 构建链和启动入口。上游在 v1.111.0 调整了目录布局：旧版使用根目录 `Dockerfile` 和 `ui/litellm-dashboard`，新版使用 `litellm/deploy/docker/Dockerfile` 和 `litellm/ui/litellm-dashboard`。发布脚本不写死这两处路径：它从该版本公开构建命令读取 Dockerfile 路径，再从 Dockerfile 的 UI 依赖 `COPY` 行推导前端目录，并核对 `ui-builder` 阶段、`RUN npm run build`、HTML 入口和公开构建命令；任一环节再次漂移都会停止发布，待人工适配，不静默套用旧配方。本仓库 Actions 仅提供同步、汉化、调用原始构建、检查和 GHCR 推送编排，不复制或维护第二份 Dockerfile。实际 Dockerfile 路径、UI 路径及原始 Dockerfile 和公开构建 workflow 的 SHA256 都记入 `provenance.json`。
 
 ## 汉化范围与安全边界
 
@@ -62,10 +62,11 @@ GitHub 定时任务不保证准点，且无活动的公开仓库可能被 GitHub
 npm ci --ignore-scripts
 npm test
 node scripts/apply.mjs /path/to/clean/litellm
-docker build -t ghcr.io/le-shi/litellm:v1.109.0-zh /path/to/clean/litellm
+docker build -f /path/to/clean/litellm/litellm/deploy/docker/Dockerfile \
+  -t ghcr.io/le-shi/litellm:v1.111.0-zh /path/to/clean/litellm
 ```
 
-`apply.mjs` 只应用中文层，不发布、不修改 Git 分支。相同转换结果可以重复检查；词库或已经转换的文件发生变化时，必须使用干净上游源码重新生成，不能叠加不同汉化层。
+上面的 Dockerfile 路径对应 v1.111.0 起的新布局；v1.110.x 及更早版本使用 `/path/to/clean/litellm/Dockerfile`。汉化后的实际路径也记录在源码根目录的 `.litellm-zh.json` 中。`apply.mjs` 只应用中文层，不发布、不修改 Git 分支。相同转换结果可以重复检查；词库或已经转换的文件发生变化时，必须使用干净上游源码重新生成，不能叠加不同汉化层。
 
 ## 发布权限与恢复
 

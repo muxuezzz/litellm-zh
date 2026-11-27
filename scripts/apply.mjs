@@ -13,6 +13,19 @@ const displayAttributes = new Set([
 ]);
 const notificationMethods = new Set(["success", "error", "info", "warning", "warn", "loading"]);
 const protectedTags = new Set(["code", "pre", "script", "style", "textarea"]);
+// 上游 v1.111.0 起把前端迁入 litellm/ui；只按真实布局定位，不复制或修改上游目录。
+const uiSourceCandidates = ["ui/litellm-dashboard/src", "litellm/ui/litellm-dashboard/src"];
+
+export function locateUiSource(root, preferred = "") {
+  // 发布流程传入由上游 Dockerfile 推导出的路径；本地直接调用时兼容已支持的布局。
+  const candidates = preferred ? [`${preferred.replace(/\/+$/, "")}/src`] : uiSourceCandidates;
+  for (const relative of candidates) {
+    if (fs.existsSync(path.join(root, relative, "app/layout.tsx"))) {
+      return { source: relative, project: path.dirname(relative) };
+    }
+  }
+  throw new Error("上游 UI 源码入口已变化，停止发布并人工适配");
+}
 
 // 保留占位符、标记和业务值；只对词库中已有的静态显示文案作精确替换。
 export function lookup(message, dictionary) {
@@ -137,8 +150,9 @@ function countTranslations(original, localized) {
   return Object.entries(original).reduce((count, [key, value]) => count + countTranslations(value, localized[key]), 0);
 }
 
-export function applyOverlay(root, dictionary, minimum = 100) {
-  const src = path.join(root, "ui/litellm-dashboard/src");
+export function applyOverlay(root, dictionary, minimum = 100, preferredUi = "") {
+  const ui = locateUiSource(root, preferredUi);
+  const src = path.join(root, ui.source);
   const marker = path.join(root, ".litellm-zh.json");
   const fingerprint = hash(JSON.stringify(dictionary) + fs.readFileSync(fileURLToPath(import.meta.url)));
   if (fs.existsSync(marker)) {
@@ -190,7 +204,7 @@ export function applyOverlay(root, dictionary, minimum = 100) {
     fs.writeFileSync(absolute, content);
     files.push({ path: path.relative(root, absolute).split(path.sep).join("/"), sha256: hash(content) });
   }
-  const report = { language: "zh-CN", fingerprint, replacements, staticReplacements, nativeReplacements, files, missing, nativeMissing };
+  const report = { language: "zh-CN", fingerprint, ui_source_path: ui.source, replacements, staticReplacements, nativeReplacements, files, missing, nativeMissing };
   fs.writeFileSync(marker, JSON.stringify(report, null, 2) + "\n");
   return report;
 }
